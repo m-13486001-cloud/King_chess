@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
 
@@ -43,6 +44,34 @@
         <span class="mode-card-title">Two Players</span>
         <span class="mode-card-desc">Share the board. White and black alternate on the same device.</span>
       </button>
+      <button class="mode-card" id="pickOnline" type="button">
+        <span class="mode-card-icon">☍</span>
+        <span class="mode-card-title">Play Online</span>
+        <span class="mode-card-desc">Share a room code and play with a friend on a different device.</span>
+      </button>
+    </div>
+
+    <div class="online-row" id="onlineRow" hidden>
+      <div class="online-code-group">
+        <span class="difficulty-label">Room code</span>
+        <input type="text" id="roomCodeInput" class="code-input" maxlength="8" placeholder="e.g. FOX42" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button class="btn-ghost" id="generateCodeBtn" type="button">Generate</button>
+      </div>
+      <div class="online-actions">
+        <button class="btn-start" id="createRoomBtn" type="button">Create room</button>
+        <button class="btn-start" id="joinRoomBtn" type="button">Join room</button>
+      </div>
+      <p class="online-status" id="onlineStatusText"></p>
+    </div>
+
+    <div class="online-wait" id="onlineWaitPanel" hidden>
+      <p class="eyebrow">Waiting for opponent…</p>
+      <div class="room-code-display" id="roomCodeDisplay">——</div>
+      <div class="online-actions">
+        <button class="btn-ghost" id="copyLinkBtn" type="button">Copy invite link</button>
+        <button class="btn-ghost" id="cancelOnlineBtn" type="button">Cancel</button>
+      </div>
+      <p class="online-status" id="onlineWaitStatus">Share this code or link with your opponent.</p>
     </div>
 
     <div class="difficulty-row" id="difficultyRow" hidden>
@@ -89,6 +118,12 @@
     </div>
 
     <aside class="side-panel">
+      <div class="panel-block" id="roomPanelBlock" hidden>
+        <p class="panel-label">Room</p>
+        <p class="panel-value" id="roomCodeLabel">—</p>
+        <p class="panel-substatus" id="connectionStatusLabel">Connected</p>
+      </div>
+
       <div class="panel-block">
         <p class="panel-label">Mode</p>
         <p class="panel-value" id="modeLabel">—</p>

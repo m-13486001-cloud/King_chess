@@ -505,6 +505,22 @@ const difficultyOptions = document.getElementById('difficultyOptions');
 const pickComputerBtn = document.getElementById('pickComputer');
 const pickTwoPlayerBtn = document.getElementById('pickTwoPlayer');
 const startComputerGameBtn = document.getElementById('startComputerGame');
+const pickOnlineBtn = document.getElementById('pickOnline');
+const onlineRow = document.getElementById('onlineRow');
+const roomCodeInput = document.getElementById('roomCodeInput');
+const generateCodeBtn = document.getElementById('generateCodeBtn');
+const createRoomBtn = document.getElementById('createRoomBtn');
+const joinRoomBtn = document.getElementById('joinRoomBtn');
+const onlineStatusText = document.getElementById('onlineStatusText');
+const onlineWaitPanel = document.getElementById('onlineWaitPanel');
+const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+const copyLinkBtn = document.getElementById('copyLinkBtn');
+const cancelOnlineBtn = document.getElementById('cancelOnlineBtn');
+const onlineWaitStatus = document.getElementById('onlineWaitStatus');
+const roomPanelBlock = document.getElementById('roomPanelBlock');
+const roomCodeLabel = document.getElementById('roomCodeLabel');
+const connectionStatusLabel = document.getElementById('connectionStatusLabel');
+const undoBtn = document.getElementById('undoBtn');
 const turnText = document.getElementById('turnText');
 const turnDot = document.getElementById('turnDot');
 const moveLogEl = document.getElementById('moveLog');
@@ -522,7 +538,61 @@ const bottomCaptures = document.getElementById('bottomCaptures');
 pickComputerBtn.addEventListener('click', () => {
   pickComputerBtn.classList.add('is-active');
   difficultyRow.hidden = false;
+  onlineRow.hidden = true;
+  onlineWaitPanel.hidden = true;
   difficultyRow.scrollIntoView({ behavior:'smooth', block:'nearest' });
+});
+
+pickOnlineBtn.addEventListener('click', () => {
+  pickComputerBtn.classList.remove('is-active');
+  difficultyRow.hidden = true;
+  onlineRow.hidden = false;
+  onlineStatusText.textContent = '';
+  onlineRow.scrollIntoView({ behavior:'smooth', block:'nearest' });
+});
+
+generateCodeBtn.addEventListener('click', () => {
+  roomCodeInput.value = randomRoomCode();
+});
+
+roomCodeInput.addEventListener('input', () => {
+  const caret = roomCodeInput.selectionStart;
+  roomCodeInput.value = sanitizeRoomCode(roomCodeInput.value);
+  roomCodeInput.setSelectionRange(caret, caret);
+});
+
+createRoomBtn.addEventListener('click', () => {
+  const code = sanitizeRoomCode(roomCodeInput.value) || randomRoomCode();
+  roomCodeInput.value = code;
+  hostRoom(code);
+});
+
+joinRoomBtn.addEventListener('click', () => {
+  const code = sanitizeRoomCode(roomCodeInput.value);
+  if (!code){
+    onlineStatusText.textContent = 'Enter a room code first.';
+    return;
+  }
+  joinRoom(code);
+});
+
+cancelOnlineBtn.addEventListener('click', () => {
+  teardownConnection();
+  onlineWaitPanel.hidden = true;
+  onlineRow.hidden = false;
+});
+
+copyLinkBtn.addEventListener('click', () => {
+  const url = new URL(window.location.href);
+  url.searchParams.set('code', onlineRoomCode);
+  const linkText = url.toString();
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(linkText)
+      .then(() => { onlineWaitStatus.textContent = 'Link copied! Send it to your opponent.'; })
+      .catch(() => { onlineWaitStatus.textContent = `Share this link: ${linkText}`; });
+  } else {
+    onlineWaitStatus.textContent = `Share this link: ${linkText}`;
+  }
 });
 
 difficultyOptions.addEventListener('click', (e) => {
@@ -543,13 +613,28 @@ pickTwoPlayerBtn.addEventListener('click', () => {
   startGame();
 });
 
-document.getElementById('menuBtn').addEventListener('click', backToMenu);
-document.getElementById('menuFromOverBtn').addEventListener('click', backToMenu);
-document.getElementById('rematchBtn').addEventListener('click', () => { startGame(); });
+function leaveOnlineGameIfNeeded(){
+  if (mode === 'online'){
+    sendData({ type:'leave' });
+    teardownConnection();
+  }
+}
+
+document.getElementById('menuBtn').addEventListener('click', () => { leaveOnlineGameIfNeeded(); backToMenu(); });
+document.getElementById('menuFromOverBtn').addEventListener('click', () => { leaveOnlineGameIfNeeded(); backToMenu(); });
+document.getElementById('rematchBtn').addEventListener('click', () => {
+  if (mode === 'online'){
+    if (!isOnlineHost || !onlineConnected) return; // only the host restarts online games
+    sendData({ type:'restart' });
+  }
+  startGame();
+});
 document.getElementById('undoBtn').addEventListener('click', undoLastTurn);
 document.getElementById('resignBtn').addEventListener('click', () => {
   if (gameOver) return;
+  if (mode === 'online' && !onlineConnected) return;
   const winner = state.turn === 'w' ? 'Black' : 'White';
+  if (mode === 'online') sendData({ type:'resign' });
   endGame('Resignation', `${winner} wins`);
 });
 
@@ -558,6 +643,9 @@ function backToMenu(){
   modeScreen.hidden = false;
   pickComputerBtn.classList.remove('is-active');
   difficultyRow.hidden = true;
+  onlineRow.hidden = true;
+  onlineWaitPanel.hidden = true;
+  roomPanelBlock.hidden = true;
 }
 
 function startGame(){
@@ -572,12 +660,23 @@ function startGame(){
   moveLogEl.innerHTML = '';
   statusLabel.textContent = 'In progress';
 
-  modeLabel.textContent = mode === 'computer'
-    ? `Vs. Computer — ${ {1:'Casual',2:'Club',3:'Sharp'}[aiDepth] }`
-    : 'Two Players';
-
-  topPlayerName.textContent = mode === 'computer' ? 'Computer' : 'Black';
-  bottomPlayerName.textContent = 'White';
+  if (mode === 'online'){
+    modeLabel.textContent = `Online — Room ${onlineRoomCode}`;
+    topPlayerName.textContent = onlineColor === 'w' ? 'Opponent (Black)' : 'Opponent (White)';
+    bottomPlayerName.textContent = onlineColor === 'w' ? 'You (White)' : 'You (Black)';
+    roomPanelBlock.hidden = false;
+    roomCodeLabel.textContent = onlineRoomCode;
+    connectionStatusLabel.textContent = 'Connected';
+    undoBtn.hidden = true;
+  } else {
+    modeLabel.textContent = mode === 'computer'
+      ? `Vs. Computer — ${ {1:'Casual',2:'Club',3:'Sharp'}[aiDepth] }`
+      : 'Two Players';
+    topPlayerName.textContent = mode === 'computer' ? 'Computer' : 'Black';
+    bottomPlayerName.textContent = 'White';
+    roomPanelBlock.hidden = true;
+    undoBtn.hidden = false;
+  }
   topCaptures.textContent = '';
   bottomCaptures.textContent = '';
 
@@ -592,6 +691,7 @@ function squareId(r,c){ return `${FILES[c]}${8-r}`; }
 
 function renderBoard(){
   boardEl.innerHTML = '';
+  boardEl.classList.toggle('is-flipped', mode === 'online' && onlineColor === 'b');
   for (let r=0;r<8;r++){
     for (let c=0;c<8;c++){
       const sq = document.createElement('div');
@@ -655,6 +755,7 @@ function onSquareClick(e){
     // it's ai's turn conceptually handled elsewhere, but guard anyway
   }
   if (mode==='computer' && state.turn === aiColor) return; // not player's turn
+  if (mode==='online' && (!onlineConnected || state.turn !== onlineColor)) return; // not your turn / not connected
 
   const piece = state.board[r][c];
 
@@ -735,7 +836,10 @@ function moveToAlgebraic(st, move, pieceType, isCheck, isMate){
   return s;
 }
 
-function commitMove(move){
+function commitMove(move, fromRemote){
+  if (mode === 'online' && !fromRemote){
+    sendData({ type:'move', move: { fromR:move.fromR, fromC:move.fromC, toR:move.toR, toC:move.toC, promotion: move.promotion || null } });
+  }
   const piece = state.board[move.fromR][move.fromC];
   const pieceType = piece.type;
   const mover = piece.color;
@@ -824,9 +928,19 @@ function endGame(eyebrow, title){
   gameOverEyebrow.textContent = eyebrow;
   gameOverTitle.textContent = title;
   gameOverOverlay.hidden = false;
+
+  const rematchBtn = document.getElementById('rematchBtn');
+  if (mode === 'online' && !isOnlineHost){
+    rematchBtn.disabled = true;
+    rematchBtn.textContent = 'Waiting for host…';
+  } else {
+    rematchBtn.disabled = false;
+    rematchBtn.textContent = 'Rematch';
+  }
 }
 
 function undoLastTurn(){
+  if (mode === 'online') return; // undo isn't supported in online games
   if (aiThinking) return;
   // In computer mode, undo both the AI's move and the player's move so it's the player's turn again
   const stepsToUndo = (mode==='computer' && state.history.length>=2) ? 2 : (state.history.length>=1 ? 1 : 0);
@@ -848,3 +962,172 @@ function undoLastTurn(){
   updateTurnBanner();
   statusLabel.textContent = 'In progress';
 }
+
+/* ============ Online Multiplayer (WebRTC via PeerJS) ============
+   Two devices "pair" by both using the same room code. The code is turned
+   into a PeerJS peer id; whoever creates the room becomes that peer id and
+   plays White, and whoever joins connects directly to it and plays Black.
+   Once the peer-to-peer data channel is open, moves are sent as small JSON
+   messages and applied locally on each side — no server ever sees the game.
+   ================================================================= */
+
+const PEER_ID_PREFIX = 'endgame-chess-room-';
+
+let peer = null;
+let conn = null;
+let onlineColor = null;      // 'w' or 'b' — which side the local player is on
+let isOnlineHost = false;
+let onlineRoomCode = null;
+let onlineConnected = false;
+
+function sanitizeRoomCode(raw){
+  return (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+}
+
+function randomRoomCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I for readability
+  let out = '';
+  for (let i=0;i<5;i++) out += chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
+
+function teardownConnection(){
+  if (conn){ try{ conn.close(); }catch(e){} conn = null; }
+  if (peer){ try{ peer.destroy(); }catch(e){} peer = null; }
+  onlineConnected = false;
+}
+
+function hostRoom(code){
+  teardownConnection();
+  onlineRoomCode = code;
+  isOnlineHost = true;
+  onlineColor = 'w';
+  onlineRow.hidden = true;
+  onlineWaitPanel.hidden = false;
+  roomCodeDisplay.textContent = code;
+  onlineWaitStatus.textContent = 'Share this code or link with your opponent.';
+
+  try{
+    history.replaceState(null, '', '?code=' + code);
+  } catch(e){ /* ignore */ }
+
+  peer = new Peer(PEER_ID_PREFIX + code);
+
+  peer.on('connection', (c) => {
+    if (conn){ c.close(); return; } // room already has an opponent
+    conn = c;
+    conn.on('open', () => wireConnection());
+  });
+
+  peer.on('error', (err) => {
+    if (err && err.type === 'unavailable-id'){
+      onlineWaitStatus.textContent = 'That code is taken right now — try Generate for a new one.';
+    } else {
+      onlineWaitStatus.textContent = 'Connection error (' + (err && err.type ? err.type : 'unknown') + '). Try again.';
+    }
+  });
+}
+
+function joinRoom(code){
+  teardownConnection();
+  onlineRoomCode = code;
+  isOnlineHost = false;
+  onlineColor = 'b';
+  onlineStatusText.textContent = 'Connecting…';
+
+  peer = new Peer();
+
+  peer.on('open', () => {
+    conn = peer.connect(PEER_ID_PREFIX + code, { reliable: true });
+    conn.on('open', () => wireConnection());
+    conn.on('error', () => {
+      onlineStatusText.textContent = "Couldn't reach that room. Check the code and try again.";
+    });
+  });
+
+  peer.on('error', (err) => {
+    onlineStatusText.textContent = 'Connection error (' + (err && err.type ? err.type : 'unknown') + '). Try again.';
+  });
+}
+
+function wireConnection(){
+  onlineConnected = true;
+  onlineRow.hidden = true;
+  onlineWaitPanel.hidden = true;
+
+  conn.on('data', handleRemoteData);
+  conn.on('close', () => {
+    onlineConnected = false;
+    if (mode === 'online' && !gameOver){
+      connectionStatusLabel && (connectionStatusLabel.textContent = 'Opponent disconnected');
+      endGame('Disconnected', 'Opponent left the game');
+    }
+  });
+
+  if (isOnlineHost){
+    mode = 'online';
+    startGame();
+    sendData({ type: 'start' });
+  }
+  // the guest waits for the host's 'start' message so both sides begin together
+}
+
+function sendData(payload){
+  if (conn && conn.open) conn.send(payload);
+}
+
+function handleRemoteData(payload){
+  if (!payload || typeof payload !== 'object') return;
+  switch (payload.type){
+    case 'start':
+      mode = 'online';
+      startGame();
+      break;
+    case 'move':
+      applyRemoteMove(payload.move);
+      break;
+    case 'resign': {
+      if (!gameOver){
+        const winner = onlineColor === 'w' ? 'White' : 'Black';
+        endGame('Resignation', `${winner} wins`);
+      }
+      break;
+    }
+    case 'restart':
+      startGame();
+      break;
+    case 'leave':
+      if (!gameOver){
+        statusLabel.textContent = 'Opponent left the game';
+        connectionStatusLabel && (connectionStatusLabel.textContent = 'Opponent left');
+      }
+      teardownConnection();
+      break;
+  }
+}
+
+function applyRemoteMove(move){
+  if (!move || !state) return;
+  // Re-derive the matching legal move locally so flags (capture, castle,
+  // en passant, promotion) line up exactly with this client's own state.
+  const localMoves = legalMovesFor(state, move.fromR, move.fromC);
+  const matched = localMoves.find(m =>
+    m.toR === move.toR && m.toC === move.toC &&
+    (m.promotion || null) === (move.promotion || null)
+  );
+  if (!matched) return; // out-of-sync safety net, silently ignore
+  commitMove(matched, true);
+}
+
+// Prefill and surface the room-code field when arriving via an invite link.
+(function initOnlineFromUrl(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = sanitizeRoomCode(params.get('code'));
+    if (codeParam){
+      roomCodeInput.value = codeParam;
+      onlineRow.hidden = false;
+      onlineStatusText.textContent = 'Room code filled in — tap Join room to connect.';
+    }
+  } catch(e){ /* ignore malformed URLs */ }
+})();
