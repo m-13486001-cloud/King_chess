@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Endgame — Chess</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="board-glow" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">♞</span>
+    <span class="brand-name">Endgame</span>
+  </div>
+  <div class="topbar-status" id="turnBanner">
+    <span class="turn-dot" id="turnDot"></span>
+    <span id="turnText">White to move</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- MODE SELECT SCREEN -->
+  <section class="mode-screen" id="modeScreen">
+    <p class="eyebrow">01 — Choose your opponent</p>
+    <h1 class="hero-title">Every game is a<br><em>quiet argument.</em></h1>
+    <p class="hero-sub">Sixty-four squares, thirty-two pieces, one decision at a time. Pick how you'd like to play.</p>
+
+    <div class="mode-cards">
+      <button class="mode-card" id="pickComputer" type="button">
+        <span class="mode-card-icon">♟ / ♙</span>
+        <span class="mode-card-title">Vs. Computer</span>
+        <span class="mode-card-desc">Play white against an engine opponent. Three difficulty settings.</span>
+      </button>
+      <button class="mode-card" id="pickTwoPlayer" type="button">
+        <span class="mode-card-icon">♚ ♔</span>
+        <span class="mode-card-title">Two Players</span>
+        <span class="mode-card-desc">Share the board. White and black alternate on the same device.</span>
+      </button>
+    </div>
+
+    <div class="difficulty-row" id="difficultyRow" hidden>
+      <span class="difficulty-label">Difficulty</span>
+      <div class="difficulty-options" id="difficultyOptions">
+        <button class="diff-btn" data-depth="1">Casual</button>
+        <button class="diff-btn is-active" data-depth="2">Club</button>
+        <button class="diff-btn" data-depth="3">Sharp</button>
+      </div>
+      <button class="btn-start" id="startComputerGame" type="button">Begin game →</button>
+    </div>
+  </section>
+
+  <!-- GAME SCREEN -->
+  <section class="game-screen" id="gameScreen" hidden>
+
+    <div class="board-column">
+      <div class="player-tag player-tag--top" id="topPlayerTag">
+        <span class="player-tag-piece">♚</span>
+        <span class="player-tag-name" id="topPlayerName">Black</span>
+        <span class="player-tag-captures" id="topCaptures"></span>
+      </div>
+
+      <div class="board-wrap">
+        <div class="board" id="board" role="grid" aria-label="Chess board"></div>
+        <div class="promo-picker" id="promoPicker" hidden></div>
+        <div class="game-over-overlay" id="gameOverOverlay" hidden>
+          <div class="game-over-card">
+            <p class="game-over-eyebrow" id="gameOverEyebrow">Checkmate</p>
+            <h2 class="game-over-title" id="gameOverTitle">White wins</h2>
+            <div class="game-over-actions">
+              <button class="btn-start" id="rematchBtn" type="button">Rematch</button>
+              <button class="btn-ghost" id="menuFromOverBtn" type="button">Change mode</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="player-tag player-tag--bottom" id="bottomPlayerTag">
+        <span class="player-tag-piece">♔</span>
+        <span class="player-tag-name" id="bottomPlayerName">White</span>
+        <span class="player-tag-captures" id="bottomCaptures"></span>
+      </div>
+    </div>
+
+    <aside class="side-panel">
+      <div class="panel-block">
+        <p class="panel-label">Mode</p>
+        <p class="panel-value" id="modeLabel">—</p>
+      </div>
+
+      <div class="panel-block">
+        <p class="panel-label">Status</p>
+        <p class="panel-value" id="statusLabel">In progress</p>
+      </div>
+
+      <div class="panel-block panel-block--grow">
+        <p class="panel-label">Move log</p>
+        <ol class="move-log" id="moveLog"></ol>
+      </div>
+
+      <div class="panel-actions">
+        <button class="btn-ghost" id="undoBtn" type="button">Undo</button>
+        <button class="btn-ghost" id="resignBtn" type="button">Resign</button>
+        <button class="btn-ghost" id="menuBtn" type="button">Menu</button>
+      </div>
+    </aside>
+
+  </section>
+
+</main>
+
+<footer class="foot-note">
+  <span>Castling, en passant, and promotion are all in play.</span>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
