@@ -57,6 +57,15 @@
         <input type="text" id="roomCodeInput" class="code-input" maxlength="8" placeholder="e.g. FOX42" autocomplete="off" autocapitalize="characters" spellcheck="false">
         <button class="btn-ghost" id="generateCodeBtn" type="button">Generate</button>
       </div>
+      <div class="online-timer-group">
+        <span class="difficulty-label">Time per player <em>(applies if you create the room)</em></span>
+        <div class="difficulty-options" id="timeControlOptions">
+          <button class="diff-btn is-active" data-seconds="0" type="button">No timer</button>
+          <button class="diff-btn" data-seconds="60" type="button">1 min</button>
+          <button class="diff-btn" data-seconds="180" type="button">3 min</button>
+          <button class="diff-btn" data-seconds="300" type="button">5 min</button>
+        </div>
+      </div>
       <div class="online-actions">
         <button class="btn-start" id="createRoomBtn" type="button">Create room</button>
         <button class="btn-start" id="joinRoomBtn" type="button">Join room</button>
@@ -92,12 +101,14 @@
       <div class="player-tag player-tag--top" id="topPlayerTag">
         <span class="player-tag-piece">♚</span>
         <span class="player-tag-name" id="topPlayerName">Black</span>
+        <span class="player-tag-clock" id="topPlayerClock" hidden>0:00</span>
         <span class="player-tag-captures" id="topCaptures"></span>
       </div>
 
       <div class="board-wrap">
         <div class="board" id="board" role="grid" aria-label="Chess board"></div>
         <div class="promo-picker" id="promoPicker" hidden></div>
+        <div class="premove-banner" id="premoveBanner" hidden>Premove queued — tap either square to cancel</div>
         <div class="game-over-overlay" id="gameOverOverlay" hidden>
           <div class="game-over-card">
             <p class="game-over-eyebrow" id="gameOverEyebrow">Checkmate</p>
@@ -113,6 +124,7 @@
       <div class="player-tag player-tag--bottom" id="bottomPlayerTag">
         <span class="player-tag-piece">♔</span>
         <span class="player-tag-name" id="bottomPlayerName">White</span>
+        <span class="player-tag-clock" id="bottomPlayerClock" hidden>0:00</span>
         <span class="player-tag-captures" id="bottomCaptures"></span>
       </div>
     </div>

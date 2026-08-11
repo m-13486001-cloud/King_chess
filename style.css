@@ -262,6 +262,17 @@ body{
   flex-wrap: wrap;
   justify-content:center;
 }
+.online-timer-group{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap: 8px;
+}
+.online-timer-group .difficulty-label em{
+  font-style: normal;
+  opacity: 0.7;
+  font-size: 0.68rem;
+}
 .code-input{
   font-family: var(--font-mono);
   font-size: 0.95rem;
@@ -359,6 +370,22 @@ body{
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.02rem;
+}
+.player-tag-clock{
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(201,161,90,0.14);
+  color: var(--ivory);
+  margin-left: auto;
+  letter-spacing: 0.02em;
+}
+.player-tag-clock.is-low{
+  background: rgba(140,59,63,0.28);
+  color: #F3B9BC;
+  font-weight: 600;
 }
 .player-tag-captures{
   font-family: var(--font-mono);
@@ -460,11 +487,48 @@ body{
 }
 .square.is-legal:hover{ background-color: rgba(201,161,90,0.3) !important; }
 
+.square.is-premove-selected{ background-color: rgba(76,141,196,0.5) !important; }
+.square.is-premove-queued{
+  background-color: rgba(76,141,196,0.38) !important;
+  box-shadow: inset 0 0 0 3px rgba(76,141,196,0.85);
+}
+.square.is-premove-target::after{
+  content:"";
+  position:absolute;
+  width: 28%;
+  height: 28%;
+  border-radius: 50%;
+  background: rgba(76,141,196,0.6);
+}
+.square.is-premove-target.has-piece::after{
+  width: 88%;
+  height: 88%;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 4px rgba(76,141,196,0.6);
+}
+
 .board.is-flipped{ transform: rotate(180deg); }
 .board.is-flipped .piece,
 .board.is-flipped .coord{ display:inline-block; transform: rotate(180deg); }
 
 .square:hover .piece{ transform: scale(1.05); }
+
+.premove-banner{
+  position:absolute;
+  top:10px; left:50%;
+  transform: translateX(-50%);
+  background: rgba(76,141,196,0.94);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  padding: 6px 14px;
+  border-radius: 20px;
+  z-index: 4;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+}
 
 /* Promotion picker */
 .promo-picker{

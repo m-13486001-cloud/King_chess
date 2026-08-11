@@ -521,6 +521,10 @@ const roomPanelBlock = document.getElementById('roomPanelBlock');
 const roomCodeLabel = document.getElementById('roomCodeLabel');
 const connectionStatusLabel = document.getElementById('connectionStatusLabel');
 const undoBtn = document.getElementById('undoBtn');
+const premoveBanner = document.getElementById('premoveBanner');
+const topPlayerClock = document.getElementById('topPlayerClock');
+const bottomPlayerClock = document.getElementById('bottomPlayerClock');
+const timeControlOptions = document.getElementById('timeControlOptions');
 const turnText = document.getElementById('turnText');
 const turnDot = document.getElementById('turnDot');
 const moveLogEl = document.getElementById('moveLog');
@@ -553,6 +557,14 @@ pickOnlineBtn.addEventListener('click', () => {
 
 generateCodeBtn.addEventListener('click', () => {
   roomCodeInput.value = randomRoomCode();
+});
+
+timeControlOptions.addEventListener('click', (e) => {
+  const btn = e.target.closest('.diff-btn');
+  if (!btn) return;
+  [...timeControlOptions.children].forEach(b=>b.classList.remove('is-active'));
+  btn.classList.add('is-active');
+  selectedTimeControl = parseInt(btn.dataset.seconds, 10) || 0;
 });
 
 roomCodeInput.addEventListener('input', () => {
@@ -653,6 +665,11 @@ function startGame(){
   selected = null;
   legalTargets = [];
   pendingPromotion = null;
+  premove = null;
+  premoveSelected = null;
+  premoveTargets = [];
+  pendingPremovePromotion = null;
+  premoveBanner.hidden = true;
   aiThinking = false;
   gameOver = false;
   gameOverOverlay.hidden = true;
@@ -661,13 +678,21 @@ function startGame(){
   statusLabel.textContent = 'In progress';
 
   if (mode === 'online'){
-    modeLabel.textContent = `Online — Room ${onlineRoomCode}`;
+    const timeLabel = onlineTimeControl > 0 ? `${onlineTimeControl/60} min` : 'No timer';
+    modeLabel.textContent = `Online — Room ${onlineRoomCode} · ${timeLabel}`;
     topPlayerName.textContent = onlineColor === 'w' ? 'Opponent (Black)' : 'Opponent (White)';
     bottomPlayerName.textContent = onlineColor === 'w' ? 'You (White)' : 'You (Black)';
     roomPanelBlock.hidden = false;
     roomCodeLabel.textContent = onlineRoomCode;
     connectionStatusLabel.textContent = 'Connected';
     undoBtn.hidden = true;
+    if (onlineTimeControl > 0){
+      startClock();
+    } else {
+      stopClock();
+      topPlayerClock.hidden = true;
+      bottomPlayerClock.hidden = true;
+    }
   } else {
     modeLabel.textContent = mode === 'computer'
       ? `Vs. Computer — ${ {1:'Casual',2:'Club',3:'Sharp'}[aiDepth] }`
@@ -676,6 +701,9 @@ function startGame(){
     bottomPlayerName.textContent = 'White';
     roomPanelBlock.hidden = true;
     undoBtn.hidden = false;
+    stopClock();
+    topPlayerClock.hidden = true;
+    bottomPlayerClock.hidden = true;
   }
   topCaptures.textContent = '';
   bottomCaptures.textContent = '';
@@ -732,9 +760,12 @@ function applyHighlights(){
   const lastMove = state.history[state.history.length-1]?.move;
   [...boardEl.children].forEach(sq=>{
     const r = +sq.dataset.r, c = +sq.dataset.c;
-    sq.classList.remove('is-selected','is-legal','is-check','is-last-move');
+    sq.classList.remove('is-selected','is-legal','is-check','is-last-move','is-premove-selected','is-premove-target','is-premove-queued');
     if (selected && selected.r===r && selected.c===c) sq.classList.add('is-selected');
     if (legalTargets.some(m=>m.toR===r && m.toC===c)) sq.classList.add('is-legal');
+    if (premoveSelected && premoveSelected.r===r && premoveSelected.c===c) sq.classList.add('is-premove-selected');
+    if (premoveTargets.some(m=>m.toR===r && m.toC===c)) sq.classList.add('is-premove-target');
+    if (premove && ((premove.fromR===r && premove.fromC===c) || (premove.toR===r && premove.toC===c))) sq.classList.add('is-premove-queued');
     if (lastMove && ((lastMove.fromR===r && lastMove.fromC===c) || (lastMove.toR===r && lastMove.toC===c))){
       sq.classList.add('is-last-move');
     }
@@ -747,15 +778,21 @@ function applyHighlights(){
 }
 
 function onSquareClick(e){
-  if (gameOver || pendingPromotion || aiThinking) return;
+  if (gameOver || pendingPromotion || pendingPremovePromotion || aiThinking) return;
   const sq = e.currentTarget;
   const r = +sq.dataset.r, c = +sq.dataset.c;
 
-  if (mode==='computer' && state.turn !== (aiColor==='w'?'b':'w')){
-    // it's ai's turn conceptually handled elsewhere, but guard anyway
+  if (mode==='computer' && state.turn === aiColor){
+    handlePremoveClick(r,c);
+    return;
   }
-  if (mode==='computer' && state.turn === aiColor) return; // not player's turn
-  if (mode==='online' && (!onlineConnected || state.turn !== onlineColor)) return; // not your turn / not connected
+  if (mode==='online'){
+    if (!onlineConnected) return;
+    if (state.turn !== onlineColor){
+      handlePremoveClick(r,c);
+      return;
+    }
+  }
 
   const piece = state.board[r][c];
 
@@ -782,6 +819,7 @@ function onSquareClick(e){
 }
 
 function selectSquare(r,c){
+  clearPremove();
   selected = { r, c };
   legalTargets = legalMovesFor(state, r, c);
   applyHighlights();
@@ -807,6 +845,23 @@ function openPromotionPicker(fromR, fromC, toR, toC){
       promoPicker.hidden = true;
       pendingPromotion = null;
       commitMove(move);
+    });
+    promoPicker.appendChild(btn);
+  }
+}
+
+function openPremoPromotionPicker(color){
+  promoPicker.innerHTML = '';
+  promoPicker.hidden = false;
+  for (const type of ['Q','R','B','N']){
+    const btn = document.createElement('button');
+    btn.className = 'promo-choice';
+    btn.textContent = PIECE_UNICODE[color+type];
+    btn.addEventListener('click', () => {
+      promoPicker.hidden = true;
+      const { fromR, fromC, toR, toC } = pendingPremovePromotion;
+      pendingPremovePromotion = null;
+      setPremove({ fromR, fromC, toR, toC, promotion: type });
     });
     promoPicker.appendChild(btn);
   }
@@ -874,11 +929,15 @@ function commitMove(move, fromRemote){
   }
   statusLabel.textContent = isCheck ? 'Check!' : 'In progress';
 
+  if (mode === 'online' && onlineTimeControl > 0) resumeClockForTurn();
+
   if (mode==='computer' && state.turn === aiColor && !gameOver){
     aiThinking = true;
     statusLabel.textContent = 'Computer is thinking…';
     setTimeout(runAiMove, 260);
   }
+
+  maybeExecutePremove();
 }
 
 function runAiMove(){
@@ -924,6 +983,8 @@ function updateTurnBanner(){
 
 function endGame(eyebrow, title){
   gameOver = true;
+  stopClock();
+  clearPremove();
   statusLabel.textContent = title;
   gameOverEyebrow.textContent = eyebrow;
   gameOverTitle.textContent = title;
@@ -956,6 +1017,7 @@ function undoLastTurn(){
   gameOverOverlay.hidden = true;
   selected = null;
   legalTargets = [];
+  clearPremove();
   renderBoard();
   renderMoveLog();
   renderCaptures();
@@ -979,6 +1041,8 @@ let onlineColor = null;      // 'w' or 'b' — which side the local player is on
 let isOnlineHost = false;
 let onlineRoomCode = null;
 let onlineConnected = false;
+let selectedTimeControl = 0; // seconds per player, as chosen on the setup panel (host only)
+let onlineTimeControl = 0;   // seconds per player actually in effect for the current game
 
 function sanitizeRoomCode(raw){
   return (raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -1002,6 +1066,7 @@ function hostRoom(code){
   onlineRoomCode = code;
   isOnlineHost = true;
   onlineColor = 'w';
+  onlineTimeControl = selectedTimeControl;
   onlineRow.hidden = true;
   onlineWaitPanel.hidden = false;
   roomCodeDisplay.textContent = code;
@@ -1059,6 +1124,7 @@ function wireConnection(){
   conn.on('close', () => {
     onlineConnected = false;
     if (mode === 'online' && !gameOver){
+      stopClock();
       connectionStatusLabel && (connectionStatusLabel.textContent = 'Opponent disconnected');
       endGame('Disconnected', 'Opponent left the game');
     }
@@ -1067,7 +1133,7 @@ function wireConnection(){
   if (isOnlineHost){
     mode = 'online';
     startGame();
-    sendData({ type: 'start' });
+    sendData({ type: 'start', timeControlSeconds: onlineTimeControl });
   }
   // the guest waits for the host's 'start' message so both sides begin together
 }
@@ -1081,6 +1147,7 @@ function handleRemoteData(payload){
   switch (payload.type){
     case 'start':
       mode = 'online';
+      onlineTimeControl = payload.timeControlSeconds > 0 ? payload.timeControlSeconds : 0;
       startGame();
       break;
     case 'move':
@@ -1090,6 +1157,13 @@ function handleRemoteData(payload){
       if (!gameOver){
         const winner = onlineColor === 'w' ? 'White' : 'Black';
         endGame('Resignation', `${winner} wins`);
+      }
+      break;
+    }
+    case 'timeout': {
+      if (!gameOver){
+        const winner = payload.loser === 'w' ? 'Black' : 'White';
+        endGame('Time', `${winner} wins on time`);
       }
       break;
     }
@@ -1117,6 +1191,199 @@ function applyRemoteMove(move){
   );
   if (!matched) return; // out-of-sync safety net, silently ignore
   commitMove(matched, true);
+}
+
+/* ============ Premove ============
+   Lets a player queue a move while it's the opponent's turn (vs. computer
+   or online). The queued move is validated fresh — against the real board —
+   the instant it becomes the player's turn, and silently dropped if it's no
+   longer legal. Only meaningful in 'computer' and 'online' modes, since in
+   'twoplayer' it's always someone's actual turn to click.
+   ================================================================= */
+
+let premove = null;                 // {fromR,fromC,toR,toC,promotion}
+let premoveSelected = null;         // {r,c} — piece chosen for a premove
+let premoveTargets = [];            // candidate destinations for premoveSelected
+let pendingPremovePromotion = null; // {fromR,fromC,toR,toC} awaiting a promotion choice
+
+function localHumanColor(){
+  if (mode === 'computer') return aiColor === 'w' ? 'b' : 'w';
+  if (mode === 'online') return onlineColor;
+  return null; // twoplayer: no single "local" side, premove is disabled
+}
+
+function selectPremoveSquare(r,c){
+  premove = null; // choosing a new piece replaces any already-queued premove
+  premoveSelected = { r, c };
+  premoveTargets = pseudoMovesFor(state, r, c);
+  applyHighlights();
+  updatePremoveStatus();
+}
+
+function clearPremoveSelection(){
+  premoveSelected = null;
+  premoveTargets = [];
+  applyHighlights();
+}
+
+function clearPremove(){
+  premove = null;
+  premoveSelected = null;
+  premoveTargets = [];
+  pendingPremovePromotion = null;
+  if (!promoPickerBelongsToLiveMove()) promoPicker.hidden = true;
+  updatePremoveStatus();
+  if (boardEl.children.length) applyHighlights();
+}
+
+// Guards against clearPremove() hiding the picker mid-way through a live
+// (non-premove) promotion choice, which uses the same promoPicker element.
+function promoPickerBelongsToLiveMove(){
+  return !!pendingPromotion;
+}
+
+function setPremove(move){
+  premove = { fromR: move.fromR, fromC: move.fromC, toR: move.toR, toC: move.toC, promotion: move.promotion || null };
+  premoveSelected = null;
+  premoveTargets = [];
+  applyHighlights();
+  updatePremoveStatus();
+}
+
+function updatePremoveStatus(){
+  premoveBanner.hidden = !premove;
+}
+
+function handlePremoveClick(r,c){
+  const color = localHumanColor();
+  if (!color) return;
+  const piece = state.board[r][c];
+
+  // Tapping either square of an already-queued premove cancels it.
+  if (premove && ((premove.fromR===r && premove.fromC===c) || (premove.toR===r && premove.toC===c))){
+    clearPremove();
+    return;
+  }
+
+  if (premoveSelected){
+    if (premoveSelected.r===r && premoveSelected.c===c){
+      clearPremoveSelection();
+      return;
+    }
+    const target = premoveTargets.find(m=>m.toR===r && m.toC===c);
+    if (target){
+      if (target.promotion){
+        pendingPremovePromotion = { fromR: premoveSelected.r, fromC: premoveSelected.c, toR: r, toC: c };
+        premoveSelected = null;
+        premoveTargets = [];
+        openPremoPromotionPicker(color);
+        return;
+      }
+      setPremove(target);
+      return;
+    }
+    if (piece && piece.color===color){
+      selectPremoveSquare(r,c);
+    } else {
+      clearPremoveSelection();
+    }
+    return;
+  }
+
+  if (piece && piece.color===color){
+    selectPremoveSquare(r,c);
+  }
+}
+
+function maybeExecutePremove(){
+  if (gameOver || !premove) return;
+  const color = localHumanColor();
+  if (!color || state.turn !== color) return;
+  const queued = premove;
+  const candidates = legalMovesFor(state, queued.fromR, queued.fromC);
+  const match = candidates.find(m =>
+    m.toR === queued.toR && m.toC === queued.toC &&
+    (m.promotion || null) === (queued.promotion || null)
+  );
+  clearPremove();
+  if (match){
+    setTimeout(() => {
+      if (!gameOver && state.turn === color) commitMove(match);
+    }, 120);
+  }
+}
+
+/* ============ Online Chess Clock ============
+   Each device keeps its own countdown for both players, driven by the same
+   move stream, so the two clocks stay in close sync without needing a
+   server. Whichever side notices a flag fall first announces it to the
+   other over the data channel.
+   ================================================================= */
+
+let clockWhite = 0;
+let clockBlack = 0;
+let clockInterval = null;
+
+function formatClock(totalSeconds){
+  const s = Math.max(0, Math.ceil(totalSeconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2,'0')}`;
+}
+
+function renderClocks(){
+  if (mode !== 'online' || !onlineTimeControl){
+    topPlayerClock.hidden = true;
+    bottomPlayerClock.hidden = true;
+    return;
+  }
+  const topColor = onlineColor === 'w' ? 'b' : 'w';
+  const bottomColor = onlineColor;
+  const topSeconds = topColor === 'w' ? clockWhite : clockBlack;
+  const bottomSeconds = bottomColor === 'w' ? clockWhite : clockBlack;
+
+  topPlayerClock.hidden = false;
+  bottomPlayerClock.hidden = false;
+  topPlayerClock.textContent = formatClock(topSeconds);
+  bottomPlayerClock.textContent = formatClock(bottomSeconds);
+  topPlayerClock.classList.toggle('is-low', topSeconds <= 20);
+  bottomPlayerClock.classList.toggle('is-low', bottomSeconds <= 20);
+}
+
+function startClock(){
+  stopClock();
+  if (mode !== 'online' || !onlineTimeControl){
+    topPlayerClock.hidden = true;
+    bottomPlayerClock.hidden = true;
+    return;
+  }
+  clockWhite = onlineTimeControl;
+  clockBlack = onlineTimeControl;
+  renderClocks();
+  resumeClockForTurn();
+}
+
+function stopClock(){
+  if (clockInterval){ clearInterval(clockInterval); clockInterval = null; }
+}
+
+function resumeClockForTurn(){
+  stopClock();
+  if (mode !== 'online' || !onlineTimeControl || gameOver) return;
+  clockInterval = setInterval(() => {
+    if (gameOver){ stopClock(); return; }
+    if (state.turn === 'w') clockWhite = Math.max(0, clockWhite - 1);
+    else clockBlack = Math.max(0, clockBlack - 1);
+    renderClocks();
+    const flagFallen = (state.turn === 'w' && clockWhite <= 0) || (state.turn === 'b' && clockBlack <= 0);
+    if (flagFallen){
+      stopClock();
+      const loser = state.turn;
+      const winner = loser === 'w' ? 'Black' : 'White';
+      sendData({ type: 'timeout', loser });
+      endGame('Time', `${winner} wins on time`);
+    }
+  }, 1000);
 }
 
 // Prefill and surface the room-code field when arriving via an invite link.
