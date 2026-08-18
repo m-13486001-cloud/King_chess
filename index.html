@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-init.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
@@ -51,7 +54,13 @@
       </button>
     </div>
 
+    <button class="btn-ghost btn-leaderboard-link" id="viewLeaderboardBtn" type="button">🏆 View leaderboard</button>
+
     <div class="online-row" id="onlineRow" hidden>
+      <div class="online-name-group">
+        <span class="difficulty-label">Your name</span>
+        <input type="text" id="playerNameInput" class="code-input name-input" maxlength="20" placeholder="e.g. Alex" autocomplete="off" spellcheck="false">
+      </div>
       <div class="online-code-group">
         <span class="difficulty-label">Room code</span>
         <input type="text" id="roomCodeInput" class="code-input" maxlength="8" placeholder="e.g. FOX42" autocomplete="off" autocapitalize="characters" spellcheck="false">
@@ -94,6 +103,24 @@
     </div>
   </section>
 
+  <!-- LEADERBOARD SCREEN -->
+  <section class="leaderboard-screen" id="leaderboardScreen" hidden>
+    <p class="eyebrow">Rankings</p>
+    <h1 class="hero-title">Top <em>players.</em></h1>
+    <p class="hero-sub">Ratings are tracked separately per time control, from Online games only.</p>
+
+    <div class="difficulty-options" id="leaderboardTabs">
+      <button class="diff-btn is-active" data-seconds="0" type="button">No timer</button>
+      <button class="diff-btn" data-seconds="60" type="button">1 min</button>
+      <button class="diff-btn" data-seconds="180" type="button">3 min</button>
+      <button class="diff-btn" data-seconds="300" type="button">5 min</button>
+    </div>
+
+    <ol class="leaderboard-list" id="leaderboardList"></ol>
+    <p class="online-status" id="leaderboardStatus"></p>
+    <button class="btn-ghost" id="leaderboardBackBtn" type="button">← Back</button>
+  </section>
+
   <!-- GAME SCREEN -->
   <section class="game-screen" id="gameScreen" hidden>
 
@@ -113,6 +140,7 @@
           <div class="game-over-card">
             <p class="game-over-eyebrow" id="gameOverEyebrow">Checkmate</p>
             <h2 class="game-over-title" id="gameOverTitle">White wins</h2>
+            <p class="game-over-elo" id="gameOverEloText" hidden></p>
             <div class="game-over-actions">
               <button class="btn-start" id="rematchBtn" type="button">Rematch</button>
               <button class="btn-ghost" id="menuFromOverBtn" type="button">Change mode</button>

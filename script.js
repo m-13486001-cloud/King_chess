@@ -525,6 +525,14 @@ const premoveBanner = document.getElementById('premoveBanner');
 const topPlayerClock = document.getElementById('topPlayerClock');
 const bottomPlayerClock = document.getElementById('bottomPlayerClock');
 const timeControlOptions = document.getElementById('timeControlOptions');
+const playerNameInput = document.getElementById('playerNameInput');
+const viewLeaderboardBtn = document.getElementById('viewLeaderboardBtn');
+const leaderboardScreen = document.getElementById('leaderboardScreen');
+const leaderboardTabs = document.getElementById('leaderboardTabs');
+const leaderboardList = document.getElementById('leaderboardList');
+const leaderboardStatus = document.getElementById('leaderboardStatus');
+const leaderboardBackBtn = document.getElementById('leaderboardBackBtn');
+const gameOverEloText = document.getElementById('gameOverEloText');
 const turnText = document.getElementById('turnText');
 const turnDot = document.getElementById('turnDot');
 const moveLogEl = document.getElementById('moveLog');
@@ -552,7 +560,31 @@ pickOnlineBtn.addEventListener('click', () => {
   difficultyRow.hidden = true;
   onlineRow.hidden = false;
   onlineStatusText.textContent = '';
+  try{
+    const savedName = localStorage.getItem('endgame-player-name');
+    if (savedName && !playerNameInput.value) playerNameInput.value = savedName;
+  } catch(e){ /* localStorage unavailable — name just won't be pre-filled */ }
   onlineRow.scrollIntoView({ behavior:'smooth', block:'nearest' });
+});
+
+viewLeaderboardBtn.addEventListener('click', () => {
+  modeScreen.hidden = true;
+  leaderboardScreen.hidden = false;
+  loadLeaderboard(selectedLeaderboardSeconds);
+});
+
+leaderboardBackBtn.addEventListener('click', () => {
+  leaderboardScreen.hidden = true;
+  modeScreen.hidden = false;
+});
+
+leaderboardTabs.addEventListener('click', (e) => {
+  const btn = e.target.closest('.diff-btn');
+  if (!btn) return;
+  [...leaderboardTabs.children].forEach(b=>b.classList.remove('is-active'));
+  btn.classList.add('is-active');
+  selectedLeaderboardSeconds = parseInt(btn.dataset.seconds, 10) || 0;
+  loadLeaderboard(selectedLeaderboardSeconds);
 });
 
 generateCodeBtn.addEventListener('click', () => {
@@ -573,18 +605,50 @@ roomCodeInput.addEventListener('input', () => {
   roomCodeInput.setSelectionRange(caret, caret);
 });
 
-createRoomBtn.addEventListener('click', () => {
+createRoomBtn.addEventListener('click', async () => {
+  const name = sanitizePlayerName(playerNameInput.value);
+  if (!name){
+    onlineStatusText.textContent = 'Enter your name first — it\u2019s how your rating is tracked.';
+    return;
+  }
   const code = sanitizeRoomCode(roomCodeInput.value) || randomRoomCode();
   roomCodeInput.value = code;
+  createRoomBtn.disabled = true;
+  joinRoomBtn.disabled = true;
+  onlineStatusText.textContent = 'Loading your profile…';
+  const loaded = await loadPlayerProfile(name);
+  createRoomBtn.disabled = false;
+  joinRoomBtn.disabled = false;
+  if (!loaded){
+    onlineStatusText.textContent = "Couldn't reach the leaderboard — check your connection and try again.";
+    return;
+  }
+  onlineStatusText.textContent = '';
   hostRoom(code);
 });
 
-joinRoomBtn.addEventListener('click', () => {
+joinRoomBtn.addEventListener('click', async () => {
+  const name = sanitizePlayerName(playerNameInput.value);
+  if (!name){
+    onlineStatusText.textContent = 'Enter your name first — it\u2019s how your rating is tracked.';
+    return;
+  }
   const code = sanitizeRoomCode(roomCodeInput.value);
   if (!code){
     onlineStatusText.textContent = 'Enter a room code first.';
     return;
   }
+  createRoomBtn.disabled = true;
+  joinRoomBtn.disabled = true;
+  onlineStatusText.textContent = 'Loading your profile…';
+  const loaded = await loadPlayerProfile(name);
+  createRoomBtn.disabled = false;
+  joinRoomBtn.disabled = false;
+  if (!loaded){
+    onlineStatusText.textContent = "Couldn't reach the leaderboard — check your connection and try again.";
+    return;
+  }
+  onlineStatusText.textContent = 'Connecting…';
   joinRoom(code);
 });
 
@@ -647,7 +711,7 @@ document.getElementById('resignBtn').addEventListener('click', () => {
   if (mode === 'online' && !onlineConnected) return;
   const winner = state.turn === 'w' ? 'Black' : 'White';
   if (mode === 'online') sendData({ type:'resign' });
-  endGame('Resignation', `${winner} wins`);
+  endGame('Resignation', `${winner} wins`, 0);
 });
 
 function backToMenu(){
@@ -665,7 +729,7 @@ function startGame(){
   selected = null;
   legalTargets = [];
   pendingPromotion = null;
-  premove = null;
+  premoveQueue = [];
   premoveSelected = null;
   premoveTargets = [];
   pendingPremovePromotion = null;
@@ -673,6 +737,7 @@ function startGame(){
   aiThinking = false;
   gameOver = false;
   gameOverOverlay.hidden = true;
+  gameOverEloText.hidden = true;
   promoPicker.hidden = true;
   moveLogEl.innerHTML = '';
   statusLabel.textContent = 'In progress';
@@ -680,8 +745,10 @@ function startGame(){
   if (mode === 'online'){
     const timeLabel = onlineTimeControl > 0 ? `${onlineTimeControl/60} min` : 'No timer';
     modeLabel.textContent = `Online — Room ${onlineRoomCode} · ${timeLabel}`;
-    topPlayerName.textContent = onlineColor === 'w' ? 'Opponent (Black)' : 'Opponent (White)';
-    bottomPlayerName.textContent = onlineColor === 'w' ? 'You (White)' : 'You (Black)';
+    const oppLabel = opponentName ? `${opponentName} (${opponentElo ?? 100})` : (onlineColor === 'w' ? 'Opponent (Black)' : 'Opponent (White)');
+    const meLabel = myName ? `${myName} (${getMyEloFor(onlineTimeControl)})` : (onlineColor === 'w' ? 'You (White)' : 'You (Black)');
+    topPlayerName.textContent = oppLabel;
+    bottomPlayerName.textContent = meLabel;
     roomPanelBlock.hidden = false;
     roomCodeLabel.textContent = onlineRoomCode;
     connectionStatusLabel.textContent = 'Connected';
@@ -765,7 +832,7 @@ function applyHighlights(){
     if (legalTargets.some(m=>m.toR===r && m.toC===c)) sq.classList.add('is-legal');
     if (premoveSelected && premoveSelected.r===r && premoveSelected.c===c) sq.classList.add('is-premove-selected');
     if (premoveTargets.some(m=>m.toR===r && m.toC===c)) sq.classList.add('is-premove-target');
-    if (premove && ((premove.fromR===r && premove.fromC===c) || (premove.toR===r && premove.toC===c))) sq.classList.add('is-premove-queued');
+    if (premoveQueue.some(m => (m.fromR===r && m.fromC===c) || (m.toR===r && m.toC===c))) sq.classList.add('is-premove-queued');
     if (lastMove && ((lastMove.fromR===r && lastMove.fromC===c) || (lastMove.toR===r && lastMove.toC===c))){
       sq.classList.add('is-last-move');
     }
@@ -819,7 +886,7 @@ function onSquareClick(e){
 }
 
 function selectSquare(r,c){
-  clearPremove();
+  clearPremoveQueue();
   selected = { r, c };
   legalTargets = legalMovesFor(state, r, c);
   applyHighlights();
@@ -920,11 +987,11 @@ function commitMove(move, fromRemote){
   updateTurnBanner();
 
   if (oppStatus==='checkmate'){
-    endGame('Checkmate', `${mover==='w'?'White':'Black'} wins`);
+    endGame('Checkmate', `${mover==='w'?'White':'Black'} wins`, mover===onlineColor ? 1 : 0);
     return;
   }
   if (oppStatus==='stalemate'){
-    endGame('Stalemate', 'Draw');
+    endGame('Stalemate', 'Draw', 0.5);
     return;
   }
   statusLabel.textContent = isCheck ? 'Check!' : 'In progress';
@@ -981,10 +1048,10 @@ function updateTurnBanner(){
   turnDot.classList.toggle('is-black', state.turn==='b');
 }
 
-function endGame(eyebrow, title){
+function endGame(eyebrow, title, resultForMe){
   gameOver = true;
   stopClock();
-  clearPremove();
+  clearPremoveQueue();
   statusLabel.textContent = title;
   gameOverEyebrow.textContent = eyebrow;
   gameOverTitle.textContent = title;
@@ -997,6 +1064,12 @@ function endGame(eyebrow, title){
   } else {
     rematchBtn.disabled = false;
     rematchBtn.textContent = 'Rematch';
+  }
+
+  if (mode === 'online' && typeof resultForMe === 'number' && myName){
+    recordOnlineResult(resultForMe);
+  } else {
+    gameOverEloText.hidden = true;
   }
 }
 
@@ -1017,7 +1090,7 @@ function undoLastTurn(){
   gameOverOverlay.hidden = true;
   selected = null;
   legalTargets = [];
-  clearPremove();
+  clearPremoveQueue();
   renderBoard();
   renderMoveLog();
   renderCaptures();
@@ -1132,8 +1205,9 @@ function wireConnection(){
 
   if (isOnlineHost){
     mode = 'online';
+    myElo = getMyEloFor(onlineTimeControl);
     startGame();
-    sendData({ type: 'start', timeControlSeconds: onlineTimeControl });
+    sendData({ type: 'start', timeControlSeconds: onlineTimeControl, hostName: myName, hostElo: myElo });
   }
   // the guest waits for the host's 'start' message so both sides begin together
 }
@@ -1148,7 +1222,16 @@ function handleRemoteData(payload){
     case 'start':
       mode = 'online';
       onlineTimeControl = payload.timeControlSeconds > 0 ? payload.timeControlSeconds : 0;
+      opponentName = payload.hostName || 'Opponent';
+      opponentElo = typeof payload.hostElo === 'number' ? payload.hostElo : 100;
+      myElo = getMyEloFor(onlineTimeControl);
       startGame();
+      sendData({ type:'players-ready', guestName: myName, guestElo: myElo });
+      break;
+    case 'players-ready':
+      opponentName = payload.guestName || 'Opponent';
+      opponentElo = typeof payload.guestElo === 'number' ? payload.guestElo : 100;
+      topPlayerName.textContent = `${opponentName} (${opponentElo})`;
       break;
     case 'move':
       applyRemoteMove(payload.move);
@@ -1156,14 +1239,14 @@ function handleRemoteData(payload){
     case 'resign': {
       if (!gameOver){
         const winner = onlineColor === 'w' ? 'White' : 'Black';
-        endGame('Resignation', `${winner} wins`);
+        endGame('Resignation', `${winner} wins`, 1);
       }
       break;
     }
     case 'timeout': {
       if (!gameOver){
         const winner = payload.loser === 'w' ? 'Black' : 'White';
-        endGame('Time', `${winner} wins on time`);
+        endGame('Time', `${winner} wins on time`, payload.loser === onlineColor ? 0 : 1);
       }
       break;
     }
@@ -1193,16 +1276,20 @@ function applyRemoteMove(move){
   commitMove(matched, true);
 }
 
-/* ============ Premove ============
-   Lets a player queue a move while it's the opponent's turn (vs. computer
-   or online). The queued move is validated fresh — against the real board —
-   the instant it becomes the player's turn, and silently dropped if it's no
-   longer legal. Only meaningful in 'computer' and 'online' modes, since in
-   'twoplayer' it's always someone's actual turn to click.
+/* ============ Premove Queue ============
+   Lets a player queue up multiple moves in a row while it's the opponent's
+   turn (vs. computer or online) — tap piece, tap destination, tap the next
+   piece, and so on. Each queued move fires one at a time, only once it's
+   actually the player's turn, and is validated fresh against the real board
+   right before it fires. If a queued move turns out illegal (the opponent
+   did something that invalidates it), the rest of the chain is dropped too,
+   since it was planned assuming that move would go through. Only meaningful
+   in 'computer' and 'online' modes, since in 'twoplayer' it's always
+   someone's actual turn to click.
    ================================================================= */
 
-let premove = null;                 // {fromR,fromC,toR,toC,promotion}
-let premoveSelected = null;         // {r,c} — piece chosen for a premove
+let premoveQueue = [];              // [{fromR,fromC,toR,toC,promotion}, ...] in fire order
+let premoveSelected = null;         // {r,c} — piece chosen for the next queued move
 let premoveTargets = [];            // candidate destinations for premoveSelected
 let pendingPremovePromotion = null; // {fromR,fromC,toR,toC} awaiting a promotion choice
 
@@ -1212,10 +1299,34 @@ function localHumanColor(){
   return null; // twoplayer: no single "local" side, premove is disabled
 }
 
+// A lightweight clone carrying just what move generation needs, so we can
+// simulate "the board after all currently-queued moves" without touching
+// the real game state.
+function cloneSimState(st){
+  return {
+    board: cloneBoard(st.board),
+    turn: st.turn,
+    castling: { ...st.castling },
+    epTarget: st.epTarget ? { ...st.epTarget } : null,
+    kingPos: { w:{...st.kingPos.w}, b:{...st.kingPos.b} }
+  };
+}
+
+function premoveSimState(){
+  const sim = cloneSimState(state);
+  for (const mv of premoveQueue){
+    applyMove(sim, mv);
+    sim.turn = sim.turn === 'w' ? 'b' : 'w';
+  }
+  return sim;
+}
+
 function selectPremoveSquare(r,c){
-  premove = null; // choosing a new piece replaces any already-queued premove
+  const sim = premoveSimState();
+  const piece = sim.board[r][c];
+  if (!piece || piece.color !== localHumanColor()) return;
   premoveSelected = { r, c };
-  premoveTargets = pseudoMovesFor(state, r, c);
+  premoveTargets = legalMovesFor(sim, r, c);
   applyHighlights();
   updatePremoveStatus();
 }
@@ -1226,24 +1337,18 @@ function clearPremoveSelection(){
   applyHighlights();
 }
 
-function clearPremove(){
-  premove = null;
+function clearPremoveQueue(){
+  premoveQueue = [];
   premoveSelected = null;
   premoveTargets = [];
   pendingPremovePromotion = null;
-  if (!promoPickerBelongsToLiveMove()) promoPicker.hidden = true;
+  if (!pendingPromotion) promoPicker.hidden = true;
   updatePremoveStatus();
   if (boardEl.children.length) applyHighlights();
 }
 
-// Guards against clearPremove() hiding the picker mid-way through a live
-// (non-premove) promotion choice, which uses the same promoPicker element.
-function promoPickerBelongsToLiveMove(){
-  return !!pendingPromotion;
-}
-
-function setPremove(move){
-  premove = { fromR: move.fromR, fromC: move.fromC, toR: move.toR, toC: move.toC, promotion: move.promotion || null };
+function pushPremove(move){
+  premoveQueue.push({ fromR: move.fromR, fromC: move.fromC, toR: move.toR, toC: move.toC, promotion: move.promotion || null });
   premoveSelected = null;
   premoveTargets = [];
   applyHighlights();
@@ -1251,19 +1356,34 @@ function setPremove(move){
 }
 
 function updatePremoveStatus(){
-  premoveBanner.hidden = !premove;
+  if (premoveQueue.length === 0){
+    premoveBanner.hidden = true;
+    return;
+  }
+  premoveBanner.hidden = false;
+  premoveBanner.textContent = premoveQueue.length === 1
+    ? 'Premove queued — tap either square to cancel'
+    : `${premoveQueue.length} premoves queued — tap a queued square to cancel from there`;
 }
 
 function handlePremoveClick(r,c){
   const color = localHumanColor();
   if (!color) return;
-  const piece = state.board[r][c];
 
-  // Tapping either square of an already-queued premove cancels it.
-  if (premove && ((premove.fromR===r && premove.fromC===c) || (premove.toR===r && premove.toC===c))){
-    clearPremove();
-    return;
+  // Tapping a square used by an already-queued move cancels it and every
+  // move queued after it (those were planned assuming it would happen).
+  if (!premoveSelected){
+    const queuedIdx = premoveQueue.findIndex(m => (m.fromR===r&&m.fromC===c) || (m.toR===r&&m.toC===c));
+    if (queuedIdx !== -1){
+      premoveQueue = premoveQueue.slice(0, queuedIdx);
+      applyHighlights();
+      updatePremoveStatus();
+      return;
+    }
   }
+
+  const sim = premoveSimState();
+  const piece = sim.board[r][c];
 
   if (premoveSelected){
     if (premoveSelected.r===r && premoveSelected.c===c){
@@ -1279,7 +1399,7 @@ function handlePremoveClick(r,c){
         openPremoPromotionPicker(color);
         return;
       }
-      setPremove(target);
+      pushPremove(target);
       return;
     }
     if (piece && piece.color===color){
@@ -1296,21 +1416,32 @@ function handlePremoveClick(r,c){
 }
 
 function maybeExecutePremove(){
-  if (gameOver || !premove) return;
+  if (gameOver || premoveQueue.length === 0) return;
   const color = localHumanColor();
   if (!color || state.turn !== color) return;
-  const queued = premove;
+
+  const queued = premoveQueue.shift();
+  updatePremoveStatus();
+  applyHighlights();
+
   const candidates = legalMovesFor(state, queued.fromR, queued.fromC);
   const match = candidates.find(m =>
     m.toR === queued.toR && m.toC === queued.toC &&
     (m.promotion || null) === (queued.promotion || null)
   );
-  clearPremove();
-  if (match){
-    setTimeout(() => {
-      if (!gameOver && state.turn === color) commitMove(match);
-    }, 120);
+
+  if (!match){
+    // The rest of the chain was planned assuming this move would land —
+    // it no longer applies, so drop it rather than fire moves out of context.
+    premoveQueue = [];
+    updatePremoveStatus();
+    applyHighlights();
+    return;
   }
+
+  setTimeout(() => {
+    if (!gameOver && state.turn === color) commitMove(match);
+  }, 120);
 }
 
 /* ============ Online Chess Clock ============
@@ -1381,9 +1512,171 @@ function resumeClockForTurn(){
       const loser = state.turn;
       const winner = loser === 'w' ? 'Black' : 'White';
       sendData({ type: 'timeout', loser });
-      endGame('Time', `${winner} wins on time`);
+      endGame('Time', `${winner} wins on time`, loser === onlineColor ? 0 : 1);
     }
   }, 1000);
+}
+
+/* ============ Ratings & Leaderboard (Firestore) ============
+   Applies only to Online games with a real matched opponent — vs. Computer
+   and same-device Two Players never touch a player's rating. Each player
+   gets one Elo rating per time control (see firebase-init.js for the data
+   shape), starting at 100. Because there's no server refereeing the match,
+   both connected devices independently compute the same result (they see
+   identical checkmate/stalemate conditions, or an explicit resign/timeout
+   message) and each device writes only its own player's document — so
+   there's nothing to reconcile between them.
+   ================================================================= */
+
+// K-factor per time control (seconds per player): faster games swing
+// ratings a bit more per game since each one carries less signal.
+const K_FACTOR_BY_TIME = { 0: 16, 60: 24, 180: 20, 300: 18 };
+const ELO_BUCKETS = ['0','60','180','300'];
+
+let myName = null;
+let myEloMap = null;    // { "0":100, "60":100, "180":100, "300":100 }
+let myElo = 100;        // this game's bucket, resolved once the time control is known
+let opponentName = null;
+let opponentElo = null;
+let selectedLeaderboardSeconds = 0;
+
+function sanitizePlayerName(raw){
+  return (raw || '').trim().replace(/\s+/g, ' ').slice(0, 20);
+}
+
+function normalizeNameForId(name){
+  return name.trim().toLowerCase().replace(/[\/#\[\]]/g, '_').slice(0, 60) || 'player';
+}
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function defaultEloMap(){
+  const m = {};
+  ELO_BUCKETS.forEach(k => m[k] = 100);
+  return m;
+}
+
+// Loads (or creates) this player's Firestore profile and stashes their
+// per-time-control Elo map in myName/myEloMap. Returns true on success.
+async function loadPlayerProfile(name){
+  if (!db){
+    // No Firestore available (e.g. blocked or offline) — still let the
+    // player play online, just without rating tracking for this session.
+    myName = name;
+    myEloMap = defaultEloMap();
+    try{ localStorage.setItem('endgame-player-name', name); }catch(e){}
+    return true;
+  }
+  try{
+    const ref = db.collection('players').doc(normalizeNameForId(name));
+    const snap = await ref.get();
+    if (snap.exists){
+      const data = snap.data();
+      myName = data.name || name;
+      myEloMap = Object.assign(defaultEloMap(), data.elo || {});
+    } else {
+      myName = name;
+      myEloMap = defaultEloMap();
+      await ref.set({
+        name,
+        elo: myEloMap,
+        wins: { "0":0, "60":0, "180":0, "300":0 },
+        losses: { "0":0, "60":0, "180":0, "300":0 },
+        draws: { "0":0, "60":0, "180":0, "300":0 },
+        gamesPlayed: 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    try{ localStorage.setItem('endgame-player-name', name); }catch(e){}
+    return true;
+  } catch(err){
+    console.error('Failed to load player profile', err);
+    return false;
+  }
+}
+
+function getMyEloFor(seconds){
+  if (!myEloMap) return 100;
+  return myEloMap[String(seconds)] ?? 100;
+}
+
+function eloDelta(myRating, theirRating, resultForMe, timeControlSeconds){
+  const k = K_FACTOR_BY_TIME[timeControlSeconds] ?? 20;
+  const expected = 1 / (1 + Math.pow(10, (theirRating - myRating) / 400));
+  return Math.round(k * (resultForMe - expected));
+}
+
+// Computes my new rating for this game and writes it to Firestore. Purely
+// local to this device — the opponent's own client does the mirror update
+// for their own document independently.
+async function recordOnlineResult(resultForMe){
+  if (!myName || opponentElo === null || typeof opponentElo === 'undefined'){
+    gameOverEloText.hidden = true;
+    return;
+  }
+  const bucket = String(onlineTimeControl);
+  const before = getMyEloFor(onlineTimeControl);
+  const delta = eloDelta(before, opponentElo, resultForMe, onlineTimeControl);
+  const after = before + delta;
+
+  if (myEloMap) myEloMap[bucket] = after;
+
+  gameOverEloText.hidden = false;
+  gameOverEloText.classList.remove('is-up','is-down');
+  const sign = delta > 0 ? '+' : '';
+  gameOverEloText.textContent = `Rating: ${before} → ${after} (${sign}${delta})`;
+  if (delta > 0) gameOverEloText.classList.add('is-up');
+  if (delta < 0) gameOverEloText.classList.add('is-down');
+
+  if (!db) return;
+  try{
+    const ref = db.collection('players').doc(normalizeNameForId(myName));
+    const resultField = resultForMe === 1 ? 'wins' : resultForMe === 0 ? 'losses' : 'draws';
+    await ref.set({
+      name: myName,
+      elo: { [bucket]: after },
+      [resultField]: { [bucket]: firebase.firestore.FieldValue.increment(1) },
+      gamesPlayed: firebase.firestore.FieldValue.increment(1),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch(err){
+    console.error('Failed to save rating update', err);
+  }
+}
+
+async function loadLeaderboard(seconds){
+  leaderboardList.innerHTML = '';
+  if (!db){
+    leaderboardStatus.textContent = 'Leaderboard is unavailable right now.';
+    return;
+  }
+  leaderboardStatus.textContent = 'Loading…';
+  try{
+    const snap = await db.collection('players').orderBy(`elo.${seconds}`, 'desc').limit(20).get();
+    if (snap.empty){
+      leaderboardStatus.textContent = 'No games recorded for this time control yet.';
+      return;
+    }
+    leaderboardStatus.textContent = '';
+    let rank = 1;
+    snap.forEach(doc => {
+      const d = doc.data();
+      const key = String(seconds);
+      const elo = d.elo?.[key] ?? 100;
+      const w = d.wins?.[key] ?? 0;
+      const l = d.losses?.[key] ?? 0;
+      const dr = d.draws?.[key] ?? 0;
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="lb-rank">${rank++}</span><span class="lb-name">${escapeHtml(d.name || doc.id)}</span><span class="lb-elo">${elo}</span><span class="lb-record">${w}-${l}-${dr}</span>`;
+      leaderboardList.appendChild(li);
+    });
+  } catch(err){
+    console.error('Failed to load leaderboard', err);
+    leaderboardStatus.textContent = "Couldn't load the leaderboard right now.";
+  }
 }
 
 // Prefill and surface the room-code field when arriving via an invite link.

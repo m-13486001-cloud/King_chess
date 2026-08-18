@@ -95,6 +95,64 @@ body{
   padding: clamp(24px, 4vw, 56px);
 }
 
+/* ============ Leaderboard Screen ============ */
+.leaderboard-screen{
+  max-width: 640px;
+  width: 100%;
+  text-align:center;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.leaderboard-screen .difficulty-options{ margin: 6px 0 22px; }
+.leaderboard-list{
+  list-style:none;
+  margin: 0 0 22px;
+  padding: 0;
+  width: 100%;
+  max-width: 480px;
+  display:flex;
+  flex-direction:column;
+  gap: 6px;
+}
+.leaderboard-list li{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(201,161,90,0.14);
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align:left;
+}
+.lb-rank{
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--brass-bright);
+  width: 22px;
+  flex-shrink:0;
+}
+.lb-name{
+  font-family: var(--font-display);
+  font-weight: 600;
+  flex:1;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.lb-elo{
+  font-family: var(--font-mono);
+  font-weight:600;
+  color: var(--brass-bright);
+}
+.lb-record{
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: rgba(237,230,214,0.5);
+  width: 64px;
+  text-align:right;
+}
+
 /* ============ Mode Select Screen ============ */
 .mode-screen{
   max-width: 720px;
@@ -255,6 +313,18 @@ body{
   width: 100%;
   max-width: 440px;
 }
+.btn-leaderboard-link{
+  margin-top: 22px;
+}
+.online-name-group{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content:center;
+}
+.name-input{ text-transform:none; letter-spacing:normal; width: 180px; }
+
 .online-code-group{
   display:flex;
   align-items:center;
@@ -577,8 +647,16 @@ body{
 .game-over-title{
   font-family: var(--font-display);
   font-size: clamp(1.8rem, 5vw, 2.4rem);
-  margin: 0 0 24px;
+  margin: 0 0 10px;
 }
+.game-over-elo{
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: rgba(237,230,214,0.75);
+  margin: 0 0 22px;
+}
+.game-over-elo.is-up{ color: #8FCB8B; }
+.game-over-elo.is-down{ color: #F3B9BC; }
 .game-over-actions{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
 
 /* ============ Side Panel ============ */
